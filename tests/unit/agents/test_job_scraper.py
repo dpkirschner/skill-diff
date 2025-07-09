@@ -1,5 +1,9 @@
 """Unit tests for JobScraper."""
 
+import json
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from bs4 import BeautifulSoup
 
 from src.agents.scraping.job_scraper import JobScraper
@@ -263,3 +267,253 @@ class TestJobScraper:
         expected_links = {"https://example.com/jobs/valid"}
 
         assert links == expected_links
+
+    @pytest.mark.asyncio
+    async def test_handle_response_json_content(self) -> None:
+        """Test _handle_response with JSON content containing job links."""
+        # Mock response with JSON content
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.url = "https://api.example.com/jobs"
+        mock_response.json = AsyncMock(
+            return_value={
+                "jobs": [
+                    {"jobUrl": "https://jobs.ashbyhq.com/Company/123"},
+                    {"url": "https://example.com/careers/engineer"},
+                    {"link": "/jobs/developer"},
+                ]
+            }
+        )
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response
+        await self.scraper._handle_response(mock_response)
+
+        # Verify job links were extracted
+        expected_links = {
+            "https://jobs.ashbyhq.com/Company/123",
+            "https://example.com/careers/engineer",
+            "https://api.example.com/jobs/developer",
+        }
+        assert self.scraper._xhr_links == expected_links
+
+    @pytest.mark.asyncio
+    async def test_handle_response_non_json_content(self) -> None:
+        """Test _handle_response ignores non-JSON content."""
+        # Mock response with HTML content
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "text/html"}
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response
+        await self.scraper._handle_response(mock_response)
+
+        # Verify no links were extracted
+        assert self.scraper._xhr_links == set()
+
+    @pytest.mark.asyncio
+    async def test_handle_response_json_parse_error(self) -> None:
+        """Test _handle_response handles JSON parsing errors gracefully."""
+        # Mock response that fails JSON parsing
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.json = AsyncMock(side_effect=json.JSONDecodeError("Invalid JSON", "doc", 0))
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response - should not raise exception
+        await self.scraper._handle_response(mock_response)
+
+        # Verify no links were extracted
+        assert self.scraper._xhr_links == set()
+
+    @pytest.mark.asyncio
+    async def test_handle_response_network_error(self) -> None:
+        """Test _handle_response handles network errors gracefully."""
+        # Mock response that fails during JSON call
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.json = AsyncMock(side_effect=Exception("Network error"))
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response - should not raise exception
+        await self.scraper._handle_response(mock_response)
+
+        # Verify no links were extracted
+        assert self.scraper._xhr_links == set()
+
+    @pytest.mark.asyncio
+    async def test_handle_response_empty_json(self) -> None:
+        """Test _handle_response with empty JSON response."""
+        # Mock response with empty JSON
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.url = "https://api.example.com/jobs"
+        mock_response.json = AsyncMock(return_value={})
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response
+        await self.scraper._handle_response(mock_response)
+
+        # Verify no links were extracted
+        assert self.scraper._xhr_links == set()
+
+    @pytest.mark.asyncio
+    async def test_handle_response_nested_json_structure(self) -> None:
+        """Test _handle_response with complex nested JSON structure."""
+        # Mock response with nested JSON structure
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.url = "https://api.example.com/jobs"
+        mock_response.json = AsyncMock(
+            return_value={
+                "data": {
+                    "results": [
+                        {"job": {"url": "https://jobs.ashbyhq.com/Company/nested-123"}},
+                        {"position": {"link": "https://lever.co/company/nested-456"}},
+                    ]
+                },
+                "metadata": {"nextUrl": "https://api.example.com/jobs?page=2"},
+            }
+        )
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response
+        await self.scraper._handle_response(mock_response)
+
+        # Verify job links were extracted from nested structure
+        expected_links = {
+            "https://jobs.ashbyhq.com/Company/nested-123",
+            "https://lever.co/company/nested-456",
+        }
+        assert self.scraper._xhr_links == expected_links
+
+    @pytest.mark.asyncio
+    async def test_handle_response_accumulates_links(self) -> None:
+        """Test _handle_response accumulates links from multiple responses."""
+        # Add some initial links
+        self.scraper._xhr_links.add("https://jobs.ashbyhq.com/Company/existing-123")
+
+        # Mock first response
+        mock_response1 = MagicMock()
+        mock_response1.headers = {"content-type": "application/json"}
+        mock_response1.url = "https://api.example.com/jobs"
+        mock_response1.json = AsyncMock(
+            return_value={"jobs": [{"jobUrl": "https://jobs.ashbyhq.com/Company/new-456"}]}
+        )
+
+        # Mock second response
+        mock_response2 = MagicMock()
+        mock_response2.headers = {"content-type": "application/json"}
+        mock_response2.url = "https://api.example.com/jobs"
+        mock_response2.json = AsyncMock(
+            return_value={"positions": [{"url": "https://lever.co/company/new-789"}]}
+        )
+
+        # Call _handle_response multiple times
+        await self.scraper._handle_response(mock_response1)
+        await self.scraper._handle_response(mock_response2)
+
+        # Verify all links were accumulated
+        expected_links = {
+            "https://jobs.ashbyhq.com/Company/existing-123",
+            "https://jobs.ashbyhq.com/Company/new-456",
+            "https://lever.co/company/new-789",
+        }
+        assert self.scraper._xhr_links == expected_links
+
+    @pytest.mark.asyncio
+    async def test_handle_response_filters_non_job_links(self) -> None:
+        """Test _handle_response filters out non-job links."""
+        # Mock response with mixed content
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.url = "https://api.example.com/mixed"
+        mock_response.json = AsyncMock(
+            return_value={
+                "data": [
+                    {"url": "https://jobs.ashbyhq.com/Company/123"},  # Valid job link
+                    {"url": "https://example.com/about"},  # Should be filtered out
+                    {"url": "https://example.com/careers/engineer"},  # Valid job link
+                    {"url": "https://example.com/blog/post"},  # Should be filtered out
+                    {"url": "mailto:jobs@company.com"},  # Should be filtered out
+                    {"url": "https://example.com/jobs/developer"},  # Valid job link
+                ]
+            }
+        )
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response
+        await self.scraper._handle_response(mock_response)
+
+        # Verify only job links were extracted
+        expected_links = {
+            "https://jobs.ashbyhq.com/Company/123",
+            "https://example.com/careers/engineer",
+            "https://example.com/jobs/developer",
+        }
+        assert self.scraper._xhr_links == expected_links
+
+    @pytest.mark.asyncio
+    async def test_handle_response_content_type_variations(self) -> None:
+        """Test _handle_response handles different JSON content-type variations."""
+        test_cases = [
+            ("application/json", True),
+            ("application/json; charset=utf-8", True),
+            ("application/json;charset=utf-8", True),
+            ("Application/JSON", False),  # Case sensitive - should be ignored
+            ("text/json", False),  # Should be ignored
+            ("application/xml", False),  # Should be ignored
+        ]
+
+        for content_type, should_process in test_cases:
+            # Mock response
+            mock_response = MagicMock()
+            mock_response.headers = {"content-type": content_type}
+            mock_response.url = "https://api.example.com/jobs"
+            mock_response.json = AsyncMock(
+                return_value={"jobs": [{"jobUrl": "https://jobs.ashbyhq.com/Company/123"}]}
+            )
+
+            # Clear any existing XHR links
+            self.scraper._xhr_links.clear()
+
+            # Call _handle_response
+            await self.scraper._handle_response(mock_response)
+
+            # Check if links were extracted based on content type
+            if should_process:
+                expected_links = {"https://jobs.ashbyhq.com/Company/123"}
+                assert self.scraper._xhr_links == expected_links, f"Failed for content-type: {content_type}"
+            else:
+                assert self.scraper._xhr_links == set(), f"Should ignore content-type: {content_type}"
+
+    @pytest.mark.asyncio
+    async def test_handle_response_missing_content_type(self) -> None:
+        """Test _handle_response handles missing content-type header."""
+        # Mock response without content-type header
+        mock_response = MagicMock()
+        mock_response.headers = {}
+        mock_response.url = "https://api.example.com/jobs"
+
+        # Clear any existing XHR links
+        self.scraper._xhr_links.clear()
+
+        # Call _handle_response
+        await self.scraper._handle_response(mock_response)
+
+        # Verify no links were extracted (no JSON processing)
+        assert self.scraper._xhr_links == set()

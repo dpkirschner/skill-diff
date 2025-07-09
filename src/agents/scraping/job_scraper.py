@@ -148,7 +148,7 @@ class JobScraper:
             links.update(self._extract_links_from_text(json_str, base_url))
         return links
 
-    # TODO: implement something more robust across a few different types of landing pages
+    # FEATURE: implement something more robust across a few different types of landing pages
     def _extract_links_from_text(self, text: str, base_url: str) -> set[str]:
         """
         Regex any urls inside arbitrary text/JSON, then filter for job-ish paths.
@@ -164,7 +164,7 @@ class JobScraper:
 
     # ─────────────────────────── heuristics ─────────────────────────────── #
 
-    # TODO: can I utilize an agent call to do this arbitrarily? There must be more patterns
+    # FEATURE: can I utilize an agent call to do this arbitrarily? There must be more patterns
     JOB_PATTERNS = [
         r"/jobs?/",
         r"/careers?/",
@@ -179,7 +179,7 @@ class JobScraper:
         r"gh_jid=",  # Greenhouse
         r"lever.co/.*\?lever",  # Lever tracking links
     ]
-    # TODO: can I utilize an agent call to do this arbitrarily? There must be more patterns
+    # FEATURE: can I utilize an agent call to do this arbitrarily? There must be more patterns
     JOB_BOARDS = [
         "ashbyhq.com",
         "lever.co",
