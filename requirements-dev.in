@@ -1,8 +1,9 @@
 # Include production dependencies
--c requirements.txt
+-r requirements.in
 
 # Development-only dependencies
 ruff
 mypy
 pytest
+pytest-asyncio
 pip-tools

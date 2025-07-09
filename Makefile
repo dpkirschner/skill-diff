@@ -21,6 +21,7 @@ $(PYTHON):
 	$(PYTHON_INTERP) -m venv $(VENV_DIR)
 	$(PYTHON) -m pip install -U pip pip-tools
 	$(MAKE) install-dev
+	$(MAKE) format
 
 lock: $(PYTHON) ## Lock production and development dependencies.
 	@echo "Locking dependencies..."
@@ -44,8 +45,11 @@ test: $(PYTHON) ## Run tests with pytest.
 lint: $(PYTHON) ## Check for linting errors with Ruff.
 	$(PYTHON) -m ruff check .
 
-format: $(PYTHON) ## Format code with Ruff.
+format: $(PYTHON) ## Format code and fix all auto-fixable issues with Ruff.
+	@echo "Formatting code..."
 	$(PYTHON) -m ruff format .
+	@echo "Fixing lint issues..."
+	$(PYTHON) -m ruff check . --fix --show-fixes
 
 typecheck: $(PYTHON) ## Run static type checking with Mypy.
 	$(PYTHON) -m mypy .
@@ -68,4 +72,4 @@ clean: ## Remove all build artifacts and cache files.
 build: clean $(PYTHON) ## Build the package.
 	$(PYTHON) -m build
 
-all: venv format check ## Set up venv, format code, and run all checks.
+all: venv check
